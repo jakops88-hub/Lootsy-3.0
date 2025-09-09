@@ -1,20 +1,27 @@
+// web/app/api/sync/route.ts
 import { NextResponse } from 'next/server';
 import { fetchAllAffiliateDeals } from '@/lib/affiliateFetchers';
 import { optimizeDealsWithAI } from '@/lib/optimizer';
 import { upsertDeals } from '@/lib/db';
+import { normalizeAll, ensureOneFeatured } from '@/lib/normalize';
 
 export async function GET() {
   try {
+    // 1) hämta
     const raw = await fetchAllAffiliateDeals();
-    const optimized = await optimizeDealsWithAI(raw);
-    if (!optimized.some(d=>d.is_featured)) {
-      let idx = 0, max = -1;
-      optimized.forEach((d,i)=>{ const s = Number(d.score||0); if (s>max){max=s; idx=i;} });
-      if (optimized[idx]) optimized[idx].is_featured = true;
-    }
+
+    // 2) AI-optimering (kan kasta om API är slut)
+    let optimized = await optimizeDealsWithAI(raw);
+
+    // 3) defensiv normalisering (fixar "is featured", SEK, bild, m.m.)
+    optimized = ensureOneFeatured(normalizeAll(optimized));
+
+    // 4) skriv till DB
     await upsertDeals(optimized);
+
     return NextResponse.json({ ok: true, count: optimized.length });
-  } catch (e:any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+  } catch (e: any) {
+    console.error('SYNC_ERROR', e?.message || e);
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
 }
