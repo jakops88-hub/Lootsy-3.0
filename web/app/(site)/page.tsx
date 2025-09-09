@@ -38,7 +38,10 @@ function HomeContent() {
     if (cat) url.searchParams.set('cat', cat);
     if (q) url.searchParams.set('q', q);
     setLoading(true);
-    fetch(url.toString()).then(r => r.json()).then(setDeals).finally(()=>setLoading(false));
+    fetch(url.toString())
+      .then(r => r.json())
+      .then(setDeals)
+      .finally(() => setLoading(false));
   }, [cat, q]);
 
   const featured = useMemo(() => deals.find(d => d.is_featured), [deals]);
@@ -113,23 +116,25 @@ function SearchBar() {
   const cat0 = sp.get('cat') || '';
   const [q, setQ] = useState(q0);
   const [cat, setCat] = useState(cat0);
+
   const apply = () => {
     const url = new URL(window.location.href);
     if (q) url.searchParams.set('q', q); else url.searchParams.delete('q');
     if (cat) url.searchParams.set('cat', cat); else url.searchParams.delete('cat');
     window.location.href = url.toString();
   };
+
   return (
     <div className="card p-4 flex flex-col md:flex-row gap-3 items-center">
       <input
         value={q}
-        onChange={e=>setQ(e.target.value)}
+        onChange={(e) => setQ(e.target.value)}
         placeholder="Sök efter 'AirPods', 'jacka', 'resor'…"
         className="w-full md:flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none"
       />
       <select
         value={cat}
-        onChange={e=>setCat(e.target.value)}
+        onChange={(e) => setCat(e.target.value)}
         className="rounded-xl bg-white/5 border border-white/10 px-3 py-2"
       >
         <option value="">Alla kategorier</option>
@@ -140,5 +145,9 @@ function SearchBar() {
         <option>Skönhet</option>
         <option>Resor</option>
       </select>
-      <bu
+      <button onClick={apply} className="btn-primary w-full md:w-auto">Sök</button>
+    </div>
+  );
+}
+
 
