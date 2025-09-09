@@ -1,5 +1,6 @@
 // web/lib/affiliateFetchers.ts
 import { SAMPLE_DEALS } from './sampleData';
+import { fetchWithTimeout, safeJson } from './http';
 
 export type RawDeal = {
   source: string;
@@ -13,120 +14,104 @@ export type RawDeal = {
   image_url?: string | null;
 };
 
-const BASE = process.env.ADRECORD_API_BASE || 'https://api.adrecord.com/v2';
-const KEY  = process.env.ADRECORD_API_KEY || '';
+const BASE = (process.env.ADRECORD_API_BASE || 'https://api.adrecord.com/v2').replace(/\/+$/,'');
+const KEY  = (process.env.ADRECORD_API_KEY || '').trim();
 const PROGRAM_FILTER = (process.env.ADRECORD_PROGRAM_IDS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
+  .split(',').map(s=>s.trim()).filter(Boolean);
 
-async function fetchJson(url: string) {
-  const r = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${KEY}`,
-      Accept: 'application/json'
-    }
-  });
-  const text = await r.text();
-  let json: any = null;
-  try { json = JSON.parse(text); } catch { /* leave as string */ }
-  return { ok: r.ok, status: r.status, json, text };
+// — helper: try multiple header styles (Bearer + X-Api-Key)
+function buildHeader(style: 'bearer'|'xkey') {
+  return style === 'bearer'
+    ? { Authorization: `Bearer ${KEY}`, Accept: 'application/json' }
+    : { 'X-Api-Key': KEY, Accept: 'application/json' };
 }
 
-function mapGeneric(items: any[], src = 'adrevenue'): RawDeal[] {
-  return (items || []).map((o: any) => ({
+async function tryFetch(path: string): Promise<{items:any[], trace:any}> {
+  const urls = [`${BASE}${path}`, `${BASE}${path}/`]; // handle trailing slash
+  const styles: Array<'bearer'|'xkey'> = ['bearer','xkey'];
+  const trace: any[] = [];
+  for (const u of urls) {
+    for (const style of styles) {
+      try {
+        const res = await fetchWithTimeout(u, { headers: buildHeader(style) }, 12000);
+        const body = await safeJson(res);
+        trace.push({ url:u, style, status: res.status, ok: res.ok, bodySample: typeof body==='string'? body.slice(0,200): JSON.stringify(body).slice(0,200) });
+        if (!res.ok) continue;
+        const candidates = ['data','offers','programs','products','items','results'];
+        let arr: any[] = [];
+        for (const k of candidates) {
+          if (Array.isArray((body as any)?.[k])) { arr = (body as any)[k]; break; }
+        }
+        if (!arr.length && Array.isArray(body)) arr = body;
+        return { items: arr, trace };
+      } catch (e:any) {
+        trace.push({ url:u, style, error: String(e?.message || e) });
+        continue;
+      }
+    }
+  }
+  return { items: [], trace };
+}
+
+function applyProgramFilter(items: any[]) {
+  if (!PROGRAM_FILTER.length) return items;
+  return items.filter((o:any) =>
+    PROGRAM_FILTER.includes(String(o.programId ?? o.program_id ?? o.advertiserId ?? o.id))
+  );
+}
+
+function mapGeneric(items:any[], src='adrevenue'): RawDeal[] {
+  return (items||[]).map((o:any)=>({
     source: src,
-    source_id: String(o.id ?? o.offer_id ?? o.programId ?? o.productId ?? Math.random().toString(36).slice(2)),
+    source_id: String(o.id ?? o.offer_id ?? o.programId ?? o.productId ?? cryptoRand()),
     title: String(o.title ?? o.name ?? o.productName ?? 'Erbjudande'),
     description: o.description ?? o.summary ?? o.shortDescription ?? null,
     category: o.category ?? o.vertical ?? o.programCategory ?? null,
-    price: typeof o.price === 'number' ? o.price : null,
+    price: typeof o.price==='number' ? o.price : null,
     currency: (o.currency || 'SEK') as string,
     link_url: o.tracking_url || o.trackingUrl || o.url || '#',
     image_url: o.image || o.imageUrl || o.logo || null,
   }));
 }
 
-function applyProgramFilter(items: any[]): any[] {
-  if (!PROGRAM_FILTER.length) return items;
-  return items.filter(
-    (o: any) =>
-      PROGRAM_FILTER.includes(String(o.programId ?? o.program_id ?? o.id))
-  );
-}
+function cryptoRand(){ return Math.random().toString(36).slice(2); }
 
-async function tryEndpoint(path: string, dataKeyCandidates: string[]): Promise<RawDeal[]> {
-  if (!KEY) return [];
-  const { ok, status, json, text } = await fetchJson(`${BASE}${path}`);
-  if (!ok) {
-    console.error(`[Adrevenue] ${path} ${status}:`, typeof json === 'object' ? json : text);
-    return [];
-  }
-  let items: any[] = [];
-  for (const k of dataKeyCandidates) {
-    if (Array.isArray((json || {})[k])) { items = json[k]; break; }
-  }
-  if (!items.length && Array.isArray(json)) items = json;
-  items = applyProgramFilter(items);
-  const mapped = mapGeneric(items, 'adrevenue');
-  console.log(`[Adrevenue] ${path} -> ${mapped.length} items`);
-  return mapped;
-}
-
-// Main fetcher – testar flera kända endpoints
-async function fetchAdrevenue(): Promise<RawDeal[]> {
+async function fetchAdrevenue(): Promise<{deals:RawDeal[], debug:any}> {
   if (!KEY) {
-    console.warn('⚠️ ADRECORD_API_KEY saknas – använder SAMPLE_DEALS.');
-    return SAMPLE_DEALS.map(d => ({
-      source: 'sample',
-      source_id: d.source_id,
-      title: d.title,
-      description: d.description ?? null,
-      category: d.category ?? null,
-      price: d.price ?? null,
-      currency: d.currency ?? 'SEK',
-      link_url: d.link_url,
-      image_url: d.image_url ?? null,
+    const deals = SAMPLE_DEALS.map(d=>({
+      source:'sample', source_id:d.source_id, title:d.title,
+      description:d.description ?? null, category:d.category ?? null,
+      price:d.price ?? null, currency:d.currency ?? 'SEK',
+      link_url:d.link_url, image_url:d.image_url ?? null
     }));
+    return { deals, debug: { reason: 'missing_key' } };
   }
-  // Prova kända vägar; lägg gärna till fler om din dokumentation säger annat
-  const order: Array<[string, string[]]> = [
-    ['/offers',      ['data', 'offers']],
-    ['/programs',    ['data', 'programs']],
-    ['/products',    ['data', 'products']],
-  ];
-  for (const [path, keys] of order) {
-    const rows = await tryEndpoint(path, keys);
-    if (rows.length) return rows;
-  }
-  return [];
-}
 
-// Placeholder för andra nätverk
-async function fetchTradedoubler(): Promise<RawDeal[]> { return []; }
-async function fetchAmazon(): Promise<RawDeal[]> { return []; }
+  const paths = ['/offers','/programs','/products'];
+  const globalTrace:any[] = [];
+  for (const p of paths) {
+    const { items, trace } = await tryFetch(p);
+    globalTrace.push({ path:p, trace });
+    if (items.length) {
+      const filtered = applyProgramFilter(items);
+      const mapped   = mapGeneric(filtered, 'adrevenue');
+      return { deals: mapped, debug: { path: p, tried: globalTrace } };
+    }
+  }
+  return { deals: [], debug: { path: null, tried: globalTrace } };
+}
 
 export async function fetchAllAffiliateDeals(): Promise<RawDeal[]> {
-  const [adrevenue, tradedoubler, amazon] = await Promise.all([
-    fetchAdrevenue(),
-    fetchTradedoubler(),
-    fetchAmazon(),
-  ]);
-  const merged = [...adrevenue, ...tradedoubler, ...amazon];
-  if (!merged.length) {
-    console.warn('⚠️ Inga affiliate-deals – fallback till SAMPLE_DEALS.');
-    return SAMPLE_DEALS.map(d => ({
-      source: 'sample',
-      source_id: d.source_id,
-      title: d.title,
-      description: d.description ?? null,
-      category: d.category ?? null,
-      price: d.price ?? null,
-      currency: d.currency ?? 'SEK',
-      link_url: d.link_url,
-      image_url: d.image_url ?? null,
-    }));
-  }
-  return merged;
+  const { deals } = await fetchAdrevenue();
+  if (deals.length) return deals;
+  // fallback
+  return SAMPLE_DEALS.map(d=>({
+    source:'sample', source_id:d.source_id, title:d.title,
+    description:d.description ?? null, category:d.category ?? null,
+    price:d.price ?? null, currency:d.currency ?? 'SEK',
+    link_url:d.link_url, image_url:d.image_url ?? null
+  }));
 }
+
+export const __debug_adrevenue = fetchAdrevenue; // for debug route
 
