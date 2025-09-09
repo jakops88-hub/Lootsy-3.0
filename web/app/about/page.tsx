@@ -4,7 +4,6 @@ export default function About() {
     <article className="card p-6 prose">
       <h1 className="text-2xl font-bold">Om Lootsy</h1>
       <p>Lootsy kuraterar de bästa erbjudandena från svenska och internationella butiker. Med AI optimerar vi titlar, beskrivningar och kategorier för att du snabbare ska hitta bästa priset.</p>
-      <p>Vi använder affiliatelänkar. Det påverkar inte priset för dig, men kan ge oss en provision när du handlar.</p>
     </article>
   );
 }
