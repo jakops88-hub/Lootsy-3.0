@@ -13,14 +13,71 @@ export type RawDeal = {
   image_url?: string | null;
 };
 
-// --- Adrevenue / Adrecord ---
-async function fetchAdrecord(): Promise<RawDeal[]> {
-  const base = process.env.ADRECORD_API_BASE;
-  const key = process.env.ADRECORD_API_KEY;
+const BASE = process.env.ADRECORD_API_BASE || 'https://api.adrecord.com/v2';
+const KEY  = process.env.ADRECORD_API_KEY || '';
+const PROGRAM_FILTER = (process.env.ADRECORD_PROGRAM_IDS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
-  if (!base || !key) {
-    console.warn('⚠️ ADRECORD env saknas – kör SAMPLE_DEALS istället.');
-    return SAMPLE_DEALS.map((d) => ({
+async function fetchJson(url: string) {
+  const r = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${KEY}`,
+      Accept: 'application/json'
+    }
+  });
+  const text = await r.text();
+  let json: any = null;
+  try { json = JSON.parse(text); } catch { /* leave as string */ }
+  return { ok: r.ok, status: r.status, json, text };
+}
+
+function mapGeneric(items: any[], src = 'adrevenue'): RawDeal[] {
+  return (items || []).map((o: any) => ({
+    source: src,
+    source_id: String(o.id ?? o.offer_id ?? o.programId ?? o.productId ?? Math.random().toString(36).slice(2)),
+    title: String(o.title ?? o.name ?? o.productName ?? 'Erbjudande'),
+    description: o.description ?? o.summary ?? o.shortDescription ?? null,
+    category: o.category ?? o.vertical ?? o.programCategory ?? null,
+    price: typeof o.price === 'number' ? o.price : null,
+    currency: (o.currency || 'SEK') as string,
+    link_url: o.tracking_url || o.trackingUrl || o.url || '#',
+    image_url: o.image || o.imageUrl || o.logo || null,
+  }));
+}
+
+function applyProgramFilter(items: any[]): any[] {
+  if (!PROGRAM_FILTER.length) return items;
+  return items.filter(
+    (o: any) =>
+      PROGRAM_FILTER.includes(String(o.programId ?? o.program_id ?? o.id))
+  );
+}
+
+async function tryEndpoint(path: string, dataKeyCandidates: string[]): Promise<RawDeal[]> {
+  if (!KEY) return [];
+  const { ok, status, json, text } = await fetchJson(`${BASE}${path}`);
+  if (!ok) {
+    console.error(`[Adrevenue] ${path} ${status}:`, typeof json === 'object' ? json : text);
+    return [];
+  }
+  let items: any[] = [];
+  for (const k of dataKeyCandidates) {
+    if (Array.isArray((json || {})[k])) { items = json[k]; break; }
+  }
+  if (!items.length && Array.isArray(json)) items = json;
+  items = applyProgramFilter(items);
+  const mapped = mapGeneric(items, 'adrevenue');
+  console.log(`[Adrevenue] ${path} -> ${mapped.length} items`);
+  return mapped;
+}
+
+// Main fetcher – testar flera kända endpoints
+async function fetchAdrevenue(): Promise<RawDeal[]> {
+  if (!KEY) {
+    console.warn('⚠️ ADRECORD_API_KEY saknas – använder SAMPLE_DEALS.');
+    return SAMPLE_DEALS.map(d => ({
       source: 'sample',
       source_id: d.source_id,
       title: d.title,
@@ -32,67 +89,33 @@ async function fetchAdrecord(): Promise<RawDeal[]> {
       image_url: d.image_url ?? null,
     }));
   }
-
-  try {
-    // NOTE: Exempel-endpoint. Justera om din dokumentation säger annat (t.ex. /offers eller /products)
-    const url = `${base}/offers`;
-    const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${key}` },
-      // ibland kräver API:t accept-header:
-      // headers: { Authorization: `Bearer ${key}`, 'Accept': 'application/json' }
-    });
-
-    if (!r.ok) {
-      console.error('Adrecord fetch fel:', r.status, await r.text());
-      return [];
-    }
-    const json = await r.json();
-
-    // Anpassa mappingen till hur deras svar ser ut.
-    // Nedan är en säker standard för vanliga fält:
-    const items = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
-    return items.map((o: any) => ({
-      source: 'adrevenue',
-      source_id: String(o.id ?? o.offer_id ?? o.programId ?? cryptoRandom()),
-      title: String(o.title ?? o.name ?? 'Erbjudande'),
-      description: o.description ?? o.summary ?? null,
-      category: o.category ?? o.vertical ?? null,
-      price: o.price ?? null,
-      currency: (o.currency || 'SEK') as string,
-      link_url: o.tracking_url || o.trackingUrl || o.url || '#',
-      image_url: o.image || o.logo || null,
-    }));
-  } catch (e) {
-    console.error('Adrecord/Adrevenue API error:', e);
-    return [];
+  // Prova kända vägar; lägg gärna till fler om din dokumentation säger annat
+  const order: Array<[string, string[]]> = [
+    ['/offers',      ['data', 'offers']],
+    ['/programs',    ['data', 'programs']],
+    ['/products',    ['data', 'products']],
+  ];
+  for (const [path, keys] of order) {
+    const rows = await tryEndpoint(path, keys);
+    if (rows.length) return rows;
   }
-}
-
-// Placeholder för andra nätverk (kan byggas ut senare)
-async function fetchTradedoubler(): Promise<RawDeal[]> {
-  return [];
-}
-async function fetchAmazon(): Promise<RawDeal[]> {
   return [];
 }
 
-function cryptoRandom() {
-  // fallback id om inget finns i svaret
-  return Math.random().toString(36).slice(2);
-}
+// Placeholder för andra nätverk
+async function fetchTradedoubler(): Promise<RawDeal[]> { return []; }
+async function fetchAmazon(): Promise<RawDeal[]> { return []; }
 
 export async function fetchAllAffiliateDeals(): Promise<RawDeal[]> {
   const [adrevenue, tradedoubler, amazon] = await Promise.all([
-    fetchAdrecord(),
+    fetchAdrevenue(),
     fetchTradedoubler(),
     fetchAmazon(),
   ]);
-
   const merged = [...adrevenue, ...tradedoubler, ...amazon];
-
-  // Fallback om API:t inte gav något
   if (!merged.length) {
-    return SAMPLE_DEALS.map((d) => ({
+    console.warn('⚠️ Inga affiliate-deals – fallback till SAMPLE_DEALS.');
+    return SAMPLE_DEALS.map(d => ({
       source: 'sample',
       source_id: d.source_id,
       title: d.title,
