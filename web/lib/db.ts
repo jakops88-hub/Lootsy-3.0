@@ -1,5 +1,7 @@
+// web/lib/db.ts
 import { supabaseAdmin } from './supabase';
 import { z } from 'zod';
+import { normalizeAll, ensureOneFeatured } from './normalize';
 
 const InDeal = z.object({
   source: z.string(),
@@ -16,7 +18,10 @@ const InDeal = z.object({
 });
 
 export async function upsertDeals(deals: any[]) {
-  const clean = deals.map(d => {
+  // 🔧 normalisera & säkerställ en featured
+  const normalized = ensureOneFeatured(normalizeAll(deals));
+
+  const clean = normalized.map(d => {
     const r = InDeal.parse(d);
     return {
       ...r,
@@ -29,6 +34,10 @@ export async function upsertDeals(deals: any[]) {
       is_featured: r.is_featured ?? false
     };
   });
-  const { error } = await supabaseAdmin.from('deals').upsert(clean, { onConflict: 'source,source_id' });
+
+  const { error } = await supabaseAdmin
+    .from('deals')
+    .upsert(clean, { onConflict: 'source,source_id' });
+
   if (error) throw error;
 }
