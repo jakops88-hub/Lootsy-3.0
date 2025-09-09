@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0b1220;
+}
+
+html, body { height: 100%; background: radial-gradient(1200px 600px at 10% 10%, rgba(167,139,250,0.08), transparent), radial-gradient(1000px 500px at 90% 30%, rgba(34,211,238,0.07), transparent), var(--bg); color: white; }
+.container { @apply max-w-6xl mx-auto px-4; }
+.card { @apply rounded-2xl bg-slate-900/70 backdrop-blur border border-white/5 shadow-lg; }
+.badge { @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-400/20; }
+.btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-semibold transition hover:opacity-90; }
+.btn-primary { @apply btn bg-cyan-500 text-slate-900; }
+.btn-ghost { @apply btn bg-white/5 text-white; }
+.grid-deals { @apply grid gap-4 sm:grid-cols-2 lg:grid-cols-3; }
+.prose p { @apply text-slate-300 leading-relaxed; }
