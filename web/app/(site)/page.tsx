@@ -1,9 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="text-slate-400">Laddar…</p>}>
+      <HomeContent />
+    </Suspense>
+  );
+}
 
 type Deal = {
   id: string;
@@ -18,7 +26,7 @@ type Deal = {
   score?: number | null;
 };
 
-export default function HomePage() {
+function HomeContent() {
   const sp = useSearchParams();
   const cat = sp.get('cat') || undefined;
   const q = sp.get('q') || '';
@@ -55,9 +63,7 @@ export default function HomePage() {
             <div className="relative aspect-video rounded-xl overflow-hidden border border-white/10">
               {featured.image_url ? (
                 <Image src={featured.image_url} alt={featured.title} fill className="object-cover" />
-              ) : (
-                <div className="w-full h-full grid place-items-center text-slate-500">Ingen bild</div>
-              )}
+              ) : <div className="w-full h-full grid place-items-center text-slate-500">Ingen bild</div>}
             </div>
           </div>
         )}
@@ -85,9 +91,7 @@ function DealCard({ deal }: { deal: Deal }) {
       <div className="relative rounded-xl overflow-hidden border border-white/10 aspect-[4/3]">
         {deal.image_url ? (
           <Image src={deal.image_url} alt={deal.title} fill className="object-cover" />
-        ) : (
-          <div className="w-full h-full grid place-items-center text-slate-500">Ingen bild</div>
-        )}
+        ) : <div className="w-full h-full grid place-items-center text-slate-500">Ingen bild</div>}
       </div>
       <h4 className="font-semibold line-clamp-2">{deal.title}</h4>
       <p className="text-slate-400 text-sm line-clamp-3">{deal.description}</p>
@@ -136,7 +140,5 @@ function SearchBar() {
         <option>Skönhet</option>
         <option>Resor</option>
       </select>
-      <button onClick={apply} className="btn-primary w-full md:w-auto">Sök</button>
-    </div>
-  );
-}
+      <bu
+
