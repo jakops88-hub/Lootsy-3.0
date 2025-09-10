@@ -14,11 +14,15 @@ export type RawDeal = {
   image_url?: string | null;
 };
 
-const BASE = (process.env.ADREVENUE_API_BASE || 'https://addrevenue.io/api/v2').replace(/\/+$/, '');
-const KEY  = (process.env.ADREVENUE_API_KEY || '').trim();
-const CHANNEL_ID = (process.env.ADREVENUE_CHANNEL_ID || '').trim(); // valfri men ger trackingLink
-const PROGRAM_FILTER = (process.env.ADRECORD_PROGRAM_IDS || '')
-  .split(',').map(s => s.trim()).filter(Boolean); // låt vara om du vill filtrera senare
+// --- BASE som funkar för både adrevenue.com och addrevenue.io
+const RAW_BASE = (process.env.ADREVENUE_API_BASE || 'https://addrevenue.io/api/v2').trim();
+const CLEAN_BASE = RAW_BASE.replace(/\/+$/, '');
+let BASE = CLEAN_BASE;
+
+// Om man råkar sätta fel domän, försök korrigera
+if (!/adrevenue\.com|addrevenue\.io/.test(CLEAN_BASE)) {
+  BASE = 'https://api.adrevenue.com/v2'; // säkert fallback
+}
 
 function bearerHeaders(): Headers {
   const h = new Headers();
