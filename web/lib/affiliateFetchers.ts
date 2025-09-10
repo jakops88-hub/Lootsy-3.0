@@ -75,7 +75,6 @@ function mapCampaigns(items: any[]): RawDeal[] {
     };
   });
 }
-
 // -------- DEBUG FETCH (används av /api/debug/adrevenue)
 export async function __debug_adrevenue() {
   const attempts: any[] = [];
