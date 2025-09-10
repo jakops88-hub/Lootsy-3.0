@@ -10,19 +10,14 @@ const FALLBACK_IMG =
   'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&w=1200&q=60';
 
 function normalizeAll(deals: DealOut[]): DealOut[] {
-  return deals.map((d) => ({
+  return deals.map((d, i) => ({
     ...d,
-    title: (d.title || '').toString().trim(),
-    description: (d.description ?? null),
-    category: (d.category ?? null),
     currency: d.currency ?? 'SEK',
-    image_url:
-      typeof d.image_url === 'string' && d.image_url.trim().length > 0
-        ? d.image_url
-        : FALLBACK_IMG,
-    price: typeof d.price === 'number' ? d.price : null,
+    image_url: d.image_url || FALLBACK_IMG,
     score: typeof d.score === 'number' ? d.score : 50,
-    is_featured: Boolean(d.is_featured),
+    is_featured: !!d.is_featured,
+    // enkel trend: score + liten jitter + nyaste först
+    trending: (d.score ?? 50) + (Math.random() * 5) + (deals.length - i) * 0.01,
   }));
 }
 
