@@ -14,27 +14,33 @@ export type RawDeal = {
   image_url?: string | null;
 };
 
-// --- BASE som funkar för både adrevenue.com och addrevenue.io
-const RAW_BASE = (process.env.ADREVENUE_API_BASE || 'https://addrevenue.io/api/v2').trim();
+// ---- BASE som funkar för båda domänerna
+const RAW_BASE = (process.env.ADREVENUE_API_BASE || 'https://api.adrevenue.com/v2').trim();
 const CLEAN_BASE = RAW_BASE.replace(/\/+$/, '');
-let BASE = CLEAN_BASE;
+const BASE = /adrevenue\.com|addrevenue\.io/.test(CLEAN_BASE)
+  ? CLEAN_BASE
+  : 'https://api.adrevenue.com/v2';
 
-// Om man råkar sätta fel domän, försök korrigera
-if (!/adrevenue\.com|addrevenue\.io/.test(CLEAN_BASE)) {
-  BASE = 'https://api.adrevenue.com/v2'; // säkert fallback
-}
+// ---- API-nycklar / filter
+const API_KEY = (process.env.ADREVENUE_API_KEY || '').trim();
+const CHANNEL_ID = (process.env.ADREVENUE_CHANNEL_ID || '').trim();
+const PROGRAM_FILTER = (process.env.ADRECORD_PROGRAM_IDS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
-function bearerHeaders(): Headers {
+// ---- Headers helper (skickar in nyckeln explicit)
+function bearerHeaders(key: string): Headers {
   const h = new Headers();
   h.set('Accept', 'application/json');
-  h.set('Authorization', `Bearer ${KEY}`);
+  h.set('Authorization', `Bearer ${key}`);
   return h;
 }
 
 async function getChannelId(): Promise<string | null> {
   if (CHANNEL_ID) return CHANNEL_ID;
   try {
-    const res = await fetchWithTimeout(`${BASE}/channels`, { headers: bearerHeaders() }, 12000);
+    const res = await fetchWithTimeout(`${BASE}/channels`, { headers: bearerHeaders(API_KEY) }, 12000);
     if (!res.ok) return null;
     const body: any = await safeJson(res);
     const list = Array.isArray(body?.results) ? body.results : Array.isArray(body) ? body : [];
@@ -60,37 +66,50 @@ function mapCampaigns(items: any[]): RawDeal[] {
 }
 
 async function fetchAdrevenue(): Promise<{ deals: RawDeal[]; debug: any }> {
-  if (!KEY) {
+  if (!API_KEY) {
     // fallback → sample om ingen nyckel
     const deals = SAMPLE_DEALS.map(d => ({
-      source: 'sample', source_id: d.source_id, title: d.title,
-      description: d.description ?? null, category: d.category ?? null,
-      price: d.price ?? null, currency: d.currency ?? 'SEK',
-      link_url: d.link_url, image_url: d.image_url ?? null,
+      source: 'sample',
+      source_id: d.source_id,
+      title: d.title,
+      description: d.description ?? null,
+      category: d.category ?? null,
+      price: d.price ?? null,
+      currency: d.currency ?? 'SEK',
+      link_url: d.link_url,
+      image_url: d.image_url ?? null,
     }));
     return { deals, debug: { reason: 'missing_key' } };
   }
 
-  // 1) välj kanal (för trackingLink i /campaigns)
   const chId = await getChannelId();
 
-  // 2) hämta kampanjer (deals)
   const url = chId ? `${BASE}/campaigns?channelId=${encodeURIComponent(chId)}` : `${BASE}/campaigns`;
   try {
-    const res = await fetchWithTimeout(url, { headers: bearerHeaders() }, 15000);
+    const res = await fetchWithTimeout(url, { headers: bearerHeaders(API_KEY) }, 15000);
     const body: any = await safeJson(res);
     if (!res.ok) {
-      return { deals: [], debug: { status: res.status, bodySample: typeof body === 'string' ? body.slice(0,200) : JSON.stringify(body).slice(0,200) } };
+      return {
+        deals: [],
+        debug: {
+          status: res.status,
+          bodySample: typeof body === 'string' ? body.slice(0, 200) : JSON.stringify(body).slice(0, 200),
+          base: BASE,
+          url,
+        },
+      };
     }
-    // Addrevenue svarar enligt docs: { http_code, count, results: [...] }
+
     let items: any[] = Array.isArray(body?.results) ? body.results : Array.isArray(body) ? body : [];
     if (PROGRAM_FILTER.length) {
-      items = items.filter((x: any) => PROGRAM_FILTER.includes(String(x.programId ?? x.advertiserId ?? x.id)));
+      items = items.filter((x: any) =>
+        PROGRAM_FILTER.includes(String(x.programId ?? x.advertiserId ?? x.id)),
+      );
     }
     const mapped = mapCampaigns(items);
-    return { deals: mapped, debug: { path: '/campaigns', channelId: chId, count: mapped.length } };
+    return { deals: mapped, debug: { path: '/campaigns', channelId: chId || null, count: mapped.length, base: BASE } };
   } catch (e: any) {
-    return { deals: [], debug: { error: String(e?.message || e), tried: url } };
+    return { deals: [], debug: { error: String(e?.message || e), tried: url, base: BASE } };
   }
 }
 
@@ -98,7 +117,7 @@ export async function fetchAllAffiliateDeals(): Promise<RawDeal[]> {
   const { deals } = await fetchAdrevenue();
   if (deals.length) return deals;
 
-  // fallback → sample-deals
+  // fallback → sample
   return SAMPLE_DEALS.map(d => ({
     source: 'sample',
     source_id: d.source_id,
@@ -112,7 +131,6 @@ export async function fetchAllAffiliateDeals(): Promise<RawDeal[]> {
   }));
 }
 
-// Exponera debug-funktion till /api/debug/adrevenue
 export const __debug_adrevenue = fetchAdrevenue;
 
 
