@@ -1,16 +1,42 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabasePublic } from '@/lib/supabase';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-export const revalidate = 10;
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const q = searchParams.get('q')?.trim();
-  const cat = searchParams.get('cat')?.trim();
-  let query = supabasePublic.from('deals').select('*').order('is_featured',{ascending:false}).order('score',{ascending:false}).limit(60);
-  if (cat) query = query.eq('category', cat);
-  if (q) query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data || []);
+export async function GET(req: Request) {
+  try {
+    // Hämta query params, t.ex. ?featured=1
+    const { searchParams } = new URL(req.url);
+    const featured = searchParams.get("featured");
+
+    let query = supabase
+      .from("deals")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (featured) {
+      query = query.eq("is_featured", true);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Supabase Error:", error);
+      return NextResponse.json(
+        { ok: false, error: "Kunde inte hämta deals" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true, count: data.length, deals: data });
+  } catch (err) {
+    console.error("API Error:", err);
+    return NextResponse.json(
+      { ok: false, error: "Serverfel vid hämtning av deals" },
+      { status: 500 }
+    );
+  }
 }
