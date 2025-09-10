@@ -43,17 +43,37 @@ async function tryFetch(base: string, path: string, style: 'bearer' | 'xkey') {
 }
 
 function mapCampaigns(items: any[]): RawDeal[] {
-  return (items || []).map((c: any) => ({
-    source: 'adrevenue',
-    source_id: String(c.id ?? c.campaignId ?? Math.random().toString(36).slice(2)),
-    title: String(c.title ?? c.description ?? 'Kampanj'),
-    description: c.longDescription ?? c.description ?? null,
-    category: c.category ?? c.program ?? null,
-    price: null,
-    currency: 'SEK',
-    link_url: c.trackingLink || c.url || '#',
-    image_url: c.imageUrl || c.image || c.logo || null,
-  }));
+  const FALLBACK_IMG =
+    'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&w=1200&q=60';
+
+  return (items || []).map((c: any) => {
+    const title =
+      (typeof c.title === 'string' && c.title.trim()) ||
+      (typeof c.description === 'string' && c.description.trim()) ||
+      'Kampanj';
+
+    const link = c.trackingLink || c.url || '#';
+
+    const img =
+      (typeof c.imageUrl === 'string' && c.imageUrl) ||
+      (typeof c.image === 'string' && c.image) ||
+      (typeof c.logo === 'string' && c.logo) ||
+      FALLBACK_IMG;
+
+    const cat = c.category || c.vertical || c.program || null;
+
+    return {
+      source: 'adrevenue',
+      source_id: String(c.id ?? c.campaignId ?? Math.random().toString(36).slice(2)),
+      title,
+      description: c.longDescription ?? c.description ?? null,
+      category: cat,
+      price: null,
+      currency: 'SEK',
+      link_url: link,
+      image_url: img,
+    };
+  });
 }
 
 // -------- DEBUG FETCH (används av /api/debug/adrevenue)
