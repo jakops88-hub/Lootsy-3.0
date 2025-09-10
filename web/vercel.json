@@ -6,8 +6,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/sync", "schedule": "59 21 * * *" },  // sommartid (CEST)
-    { "path": "/api/sync", "schedule": "59 22 * * *" }   // vintertid (CET)
+    { "path": "/api/sync", "schedule": "59 21 * * *" },
+    { "path": "/api/sync", "schedule": "59 22 * * *" }
   ]
 }
 
